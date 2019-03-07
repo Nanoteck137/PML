@@ -6,9 +6,43 @@
 #include <vector>
 #include <unordered_map>
 
-struct Context
+struct Intern
 {
+    int length;
+    const char* str;
 };
+
+std::vector<Intern> interns;
+
+const char* InternString(const char* start, const char* end)
+{
+    int length = end - start;
+    for (int i = 0; i < interns.size(); i++)
+    {
+        if (interns[i].length == length &&
+            strncmp(start, interns[i].str, length) == 0)
+        {
+            return interns[i].str;
+        }
+    }
+
+    char* newString = (char*)malloc(length * sizeof(char) + 1);
+    memcpy(newString, start, length);
+    newString[length] = 0;
+
+    Intern intern;
+    intern.length = length;
+    intern.str = newString;
+
+    interns.push_back(intern);
+
+    return newString;
+}
+
+const char* InternString(const char* str)
+{
+    return InternString(str, str + strlen(str));
+}
 
 enum TokenType
 {
@@ -37,11 +71,7 @@ struct Token
 
     union
     {
-        struct
-        {
-            const char* start;
-            const char* end;
-        } ident;
+        const char* ident;
     };
 };
 
@@ -91,7 +121,10 @@ Token Tokenizer::GetNextToken()
     case '\\': result.type = Token_BackwordSlash; break;
         // clang-format on
     default:
-        if (isalpha(c) || c == '_')
+        if (c == '\"')
+        {
+        }
+        else if (isalpha(c) || c == '_')
         {
             while (isalnum(*m_Str) || *m_Str == '_')
             {
@@ -99,8 +132,7 @@ Token Tokenizer::GetNextToken()
             }
 
             result.type = Token_Identifier;
-            result.ident.start = start;
-            result.ident.end = m_Str;
+            result.ident = InternString(start, m_Str);
         }
     }
 
@@ -124,12 +156,32 @@ void Tokenizer::ExpectToken(TokenType type)
     }
 }
 
-enum TagType
+/*enum TagType
 {
     Tag_pml,
     Tag_function,
-    Tag_call
-};
+    Tag_call,
+
+    Tag_custom,
+};*/
+
+#define TAG(name) const char* tag_name_##name
+
+TAG(pml);
+TAG(function);
+TAG(call);
+
+#define INIT_TAG(name) tag_name_##name = InternString(#name)
+
+void InitTags()
+{
+    INIT_TAG(pml);
+    INIT_TAG(function);
+    INIT_TAG(call);
+}
+
+#undef TAG
+#undef INIT_TAG
 
 struct Attribute
 {
@@ -139,24 +191,30 @@ struct Attribute
 
 struct Tag
 {
-    TagType type;
+    const char* name;
     std::vector<Attribute> attributes;
     std::vector<Tag*> children;
 };
 
 Tag* ParseTag(Tokenizer* tokenizer)
 {
+    Tag* tag = 0;
+
     tokenizer->ExpectToken(Token_LessThen);
 
     if (tokenizer->GetCurrentToken().type == Token_Identifier)
     {
-        printf("Tag\n");
+        const char* name = tokenizer->GetCurrentToken().ident;
+
+        tag = new Tag();
+        tag->name = name;
+
         tokenizer->GetNextToken();
     }
 
     tokenizer->ExpectToken(Token_GreaterThen);
 
-    return 0;
+    return tag;
 }
 
 char* ReadFile(const char* filename)
@@ -179,6 +237,8 @@ char* ReadFile(const char* filename)
 
 int main(int argc, char** argv)
 {
+    InitTags();
+
     char* content = ReadFile("test.pml");
 
     Tokenizer tokenizer(content);
