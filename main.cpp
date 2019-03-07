@@ -6,6 +6,10 @@
 #include <vector>
 #include <unordered_map>
 
+struct Context
+{
+};
+
 enum TokenType
 {
     Token_Unknown,
@@ -31,8 +35,14 @@ struct Token
 {
     TokenType type;
 
-    const char* start;
-    const char* end;
+    union
+    {
+        struct
+        {
+            const char* start;
+            const char* end;
+        } ident;
+    };
 };
 
 class Tokenizer
@@ -47,6 +57,8 @@ public:
     ~Tokenizer();
 
     Token GetNextToken();
+    Token GetCurrentToken();
+    void ExpectToken(TokenType type);
 };
 
 Tokenizer::Tokenizer(const char* str) : m_Str(str) {}
@@ -65,9 +77,6 @@ Token Tokenizer::GetNextToken()
 
     const char* start = m_Str;
     char c = *m_Str++;
-
-    result.start = start;
-    result.end = m_Str;
 
     switch (c)
     {
@@ -90,13 +99,29 @@ Token Tokenizer::GetNextToken()
             }
 
             result.type = Token_Identifier;
-            result.start = start;
-            result.end = m_Str;
+            result.ident.start = start;
+            result.ident.end = m_Str;
         }
     }
 
     m_CurrentToken = result;
     return result;
+}
+
+Token Tokenizer::GetCurrentToken() { return m_CurrentToken; }
+
+void Tokenizer::ExpectToken(TokenType type)
+{
+    if (m_CurrentToken.type != type)
+    {
+        // TODO(patrik): Pretty printing pls
+        printf("Unexpected token\n");
+        exit(-1);
+    }
+    else
+    {
+        GetNextToken();
+    }
 }
 
 enum TagType
@@ -106,13 +131,33 @@ enum TagType
     Tag_call
 };
 
+struct Attribute
+{
+    const char* name;
+    const char* value;
+};
+
 struct Tag
 {
     TagType type;
-    std::vector<Tag> children;
+    std::vector<Attribute> attributes;
+    std::vector<Tag*> children;
 };
 
-Tag ParseTag(Tokenizer* tokenizer) {}
+Tag* ParseTag(Tokenizer* tokenizer)
+{
+    tokenizer->ExpectToken(Token_LessThen);
+
+    if (tokenizer->GetCurrentToken().type == Token_Identifier)
+    {
+        printf("Tag\n");
+        tokenizer->GetNextToken();
+    }
+
+    tokenizer->ExpectToken(Token_GreaterThen);
+
+    return 0;
+}
 
 char* ReadFile(const char* filename)
 {
@@ -137,6 +182,10 @@ int main(int argc, char** argv)
     char* content = ReadFile("test.pml");
 
     Tokenizer tokenizer(content);
+
+    tokenizer.GetNextToken();
+
+    Tag* tag = ParseTag(&tokenizer);
 
     free(content);
 
