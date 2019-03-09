@@ -1,5 +1,6 @@
 <pml name="123">
-    <function name="main">
-        <call name="print">Hello World</call>
-    </function>
+  <extern name="puts"/>
+  <function name="main">
+    <call name="puts"></call>
+  </function>
 </pml>
