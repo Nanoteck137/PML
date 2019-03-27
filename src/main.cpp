@@ -6,10 +6,15 @@
 #include <vector>
 #include <unordered_map>
 
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+
 void Error(const char* msg)
 {
     printf("%s\n", msg);
-    __debugbreak();
+    //__debugbreak();
+    __builtin_trap();
     getchar();
     exit(-1);
 };
@@ -180,7 +185,9 @@ Token Tokenizer::PeekToken()
 {
     const char* current = m_Str;
     Token currentToken = m_CurrentToken;
+
     Token result = GetNextToken();
+
     m_CurrentToken = currentToken;
     m_Str = current;
 
@@ -210,6 +217,8 @@ TAG(call);
 
 #define INIT_TAG(name) tag_name_##name = InternString(#name)
 
+#define TAG_EQ(tag, name) if (tag->GetName() == tag_name_##name)
+
 void InitTags()
 {
     INIT_TAG(pml);
@@ -238,6 +247,7 @@ public:
     ~Tag();
 
     void AddChild(Tag* child);
+    Tag* GetChild(int index);
 
     void AddAttribute(Attribute attribute);
 
@@ -255,6 +265,8 @@ Tag::~Tag()
 }
 
 void Tag::AddChild(Tag* child) { m_Children.push_back(child); }
+
+Tag* Tag::GetChild(int index) { return m_Children[index]; }
 
 void Tag::AddAttribute(Attribute attribute)
 {
@@ -374,8 +386,8 @@ char* ReadFile(const char* filename)
     int length = ftell(file);
     fseek(file, 0, SEEK_SET);
 
-    char* buffer = new char[length];
-    memset(buffer, 0, length);
+    char* buffer = new char[length + 1];
+    memset(buffer, 0, length + 1);
 
     fread(buffer, 1, length, file);
 
@@ -384,9 +396,74 @@ char* ReadFile(const char* filename)
     return buffer;
 }
 
+class Context
+{
+private:
+    llvm::LLVMContext m_Context;
+    llvm::Module* m_Module;
+    llvm::IRBuilder<>* m_Builder;
+
+    std::unordered_map<std::string, llvm::Type*> m_Types;
+
+public:
+    Context();
+    ~Context();
+
+    llvm::Type* GetType(const std::string& name) { return m_Types[name]; }
+
+    llvm::LLVMContext& GetLLVMContext() { return m_Context; }
+    llvm::Module* GetModule() const { return m_Module; }
+    llvm::IRBuilder<>& GetBuilder() const { return *m_Builder; }
+};
+
+Context::Context()
+{
+    m_Module = new llvm::Module("wooh", m_Context);
+
+    m_Types["int8"] = llvm::IntegerType::get(m_Context, 8);
+    m_Types["int16"] = llvm::IntegerType::get(m_Context, 16);
+    m_Types["int32"] = llvm::IntegerType::get(m_Context, 32);
+    m_Types["int64"] = llvm::IntegerType::get(m_Context, 64);
+
+    m_Builder = new llvm::IRBuilder<>(m_Context);
+}
+Context::~Context() { delete m_Module; }
+
+void GenerateCode(Context* context, Tag* tag)
+{
+    TAG_EQ(tag, pml) { GenerateCode(context, tag->GetChild(0)); }
+
+    TAG_EQ(tag, function)
+    {
+        llvm::FunctionType* type =
+            llvm::FunctionType::get(context->GetType("int32"), false);
+
+        llvm::Function* function = llvm::Function::Create(
+            type, llvm::GlobalValue::LinkageTypes::ExternalLinkage, "main",
+            context->GetModule());
+
+        llvm::BasicBlock* block =
+            llvm::BasicBlock::Create(context->GetLLVMContext(), "", function);
+
+        context->GetBuilder().SetInsertPoint(block);
+    }
+}
+
 int main(int argc, char** argv)
 {
     InitTags();
+
+    Context* context = new Context();
+
+    std::vector<llvm::Type*> funcParams = {
+        llvm::PointerType::get(context->GetType("int8"), 0)};
+
+    llvm::FunctionType* type =
+        llvm::FunctionType::get(context->GetType("int32"), funcParams, true);
+
+    llvm::Function* printfFunc = llvm::Function::Create(
+        type, llvm::GlobalValue::LinkageTypes::ExternalLinkage, "printf",
+        context->GetModule());
 
     char* content = ReadFile("test.pml");
 
@@ -395,9 +472,23 @@ int main(int argc, char** argv)
     tokenizer.GetNextToken();
 
     Tag* root = ParseTag(&tokenizer);
+    GenerateCode(context, root);
+
+    llvm::Value* test =
+        context->GetBuilder().CreateGlobalStringPtr("Hello World\n");
+
+    std::vector<llvm::Value*> callParams = {test};
+    context->GetBuilder().CreateCall(printfFunc, callParams);
+
+    context->GetBuilder().CreateRet(
+        llvm::ConstantInt::get(context->GetType("int32"), 0));
+
+    context->GetModule()->print(llvm::outs(), nullptr);
 
     delete root;
     delete[] content;
+
+    delete context;
 
     getchar();
 

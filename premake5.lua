@@ -1,6 +1,6 @@
 workspace "PML"
    configurations { "Debug", "Release" }
-   platforms { "Win64" }
+   platforms { "Win64", "Linux" }
 
    filter { "platforms:Win64" }
       system "Windows"
@@ -13,10 +13,17 @@ project "PML"
 
    files { "src/**.h", "src/**.cpp" }
 
+   filter { "platforms:Linux" }
+      defines { "PLATFORM_LINUX" }
+      links { "LLVM-7" }
+
+   filter { "platforms:Win64" }
+      defines { "PLATFORM_WINDOWS", "_CRT_SECURE_NO_WARNINGS" }
+
    filter "configurations:Debug"
-      defines { "DEBUG", "_CRT_SECURE_NO_WARNINGS" }
+      defines { "DEBUG" }
       symbols "On"
 
    filter "configurations:Release"
-      defines { "NDEBUG", "_CRT_SECURE_NO_WARNINGS" }
+      defines { "NDEBUG" }
       optimize "On"
